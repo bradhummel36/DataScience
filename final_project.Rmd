@@ -1,0 +1,613 @@
+---
+title: "HarvardX - PH125.9x CYO Project"
+author: "Brad Hummel"
+date: "6/23/2020"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  word_document: default
+---
+
+## Introduction {-}
+
+The objective of the PH125.9x CYO Project is to present two algorithms that predict the presence of heart disease in a patience. The objecive can be broken down into three goals.  The first goal is to make a prediction using the classiication algorithm Decision Tree.  The second goal is to make a prediction using the ensemble learning Random Forest algorithm with default paramters.  The third goal is to make a prediction using Random Forest with optimized tuning parameters.  
+
+The database originated from Cleveland and is available via UCI. The database initally contained 76 attributes and a subset of 14 were made available. It consists of 13 predictor variables and 1 predicted vairable called num.  The num is a factor variable with 4 values and it was simplified to a binary variable where numbers greater than one are set to two (factor value 1).
+
+Random Forest creates multiple grroups, hundreds or thousands, of Decision Trees that don't use all the predictor variables in any one tree. That's one big difference between the two models, the Decision Trees use all the predictor variables. Random Forest uses hundreds of these parital Decision Trees, each tree randomly choosing a partial variable set, hence the name Random Forest.
+
+Decision trees work well with training data but when new data is introduced it is less accurate. This is due to overfitting, a condition where using training data affects the usage of new data, the test data, ends up producing poor results. Since Random Forest uses many trees, a term called bagging, it ends up producing better results.
+
+Creating a Random Forest consists of five steps. 
+Step 1, a bootstrap set of the data set is created that consists of random selections of the data set by resampling. 
+Step 2, random subsets of the bootstrap data are used to create Decision Trees. 
+Step 3, go back to step 1 and repeat. This is done hudrends of times to create a random forest of trees. 
+Step 4, with the forest created, evaluate each tree to predict a new data point. 
+Step 5, the test set is used to evaluate the training set.
+
+In this project there are a few tuning variables avaialbe for tuning the Random forest to find an optimal solution:  mtry, maxnodes, maxtrees.
+
+
+
+## Methods/Analysis {-}
+
+The data set is loaded from $\tt "https://archive.ics.uci.edu/ml/machine-learning-databases/heart-disease/processed.cleveland.data"$.
+
+First, the data is cleaned.  Column headers are added that correspond to the data set website link. The predicted attribute, $\tt num$, is a factor variable that has four values, 1-4.  To simlpify the result, values 2-4 are converted to 1. Each of the 14 attributes are converted to an appropriate type. There are $\tt ?$ in the data. These $\tt ?$ are converted to $\tt NA$. The attibutes are identified and rows with $\tt NA$ are coerced to factor types and results in these rows being removed.
+
+The data set is partitioned into $\tt train$ set and $\tt test$ set.  The $\tt training$ set is used for training and making adjustments to the Random Forest tuning variables. The $\tt test$ set is completely ignored during this model development.
+
+The first training was done with just defaults.  Nothing was optimized.  The next training was done to find the best tunable parameter $\tt mtry$.  The next training after that was done to find the best $\tt max nodes$ with the optimized $\tt mtry$. The final training was done to find the best $\\t max trees$ with the optimized $\\t mtry and max nodes$. Finally, these optimized paramters are used to find the optimal solution.
+
+R version 3.6.3 is provides default packages for basic data analysis.
+The library caret is used for creating partitions. 
+The library dplyr is available for any additional data wrangling.
+The library ggplot2 is used for viusalization.
+The library randomForest is used for the Random Forest algorithm.
+A few more libraries were added in case any additional functionality is needed.
+
+## Detailed Method/Analysis {-}
+
+
+Install packages.
+
+```{r install packages}
+options(warn = -1)
+
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(dplyr)) install.packages("dplyr", repos = "http://cran.us.r-project.org")
+if(!require(tidyr)) install.packages("tidyr", repos = "http://cran.us.r-project.org")
+if(!require(ggplot2)) install.packages("ggplot2", repos = "http://cran.us.r-project.org")
+if(!require(rattle)) install.packages("rattle", repos = "http://cran.us.r-project.org")
+if(!require(randomForest)) install.packages("randomForest", repos = "http://cran.us.r-project.org")
+if(!require(RColorBrewer)) install.packages("RColorBrewer", repos = "http://cran.us.r-project.org")
+
+```
+
+
+
+Load libraries.
+
+```{r load libraries}
+library(caret)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(grid)
+library(gridExtra)
+library(lattice)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+library(RColorBrewer)
+```
+
+
+
+Load the Cleveland data set.
+
+```{r load data}
+data <- read.csv(
+  "https://archive.ics.uci.edu/ml/machine-learning-databases/heart-disease/processed.cleveland.data",
+  header=FALSE
+)
+```
+
+
+
+$\tt Clean the data set.$
+
+Add column headings corresponding to the website's headings.  Verify the coluumns are correct
+
+```{r add column headings}
+names(data) <- c("age", "sex", "cp", "trestbps", "choi", "fbs", "restecg", "thalach", "exang", "oldpeak", "slope", "ca", "thai", "num")
+head(data)
+```
+
+
+
+Change the $\\t num$ column's range of 1-4 to 1 and verify.
+
+```{r change num range}
+data$num[data$num > 1] <- 1
+head(data)
+sapply(data, class)
+```
+
+
+
+Coerce data columns into the appropriate types and verify.
+
+```{r convert data into appropriate types}
+
+data <- transform(
+  data,
+  age=as.integer(age),
+  sex=as.factor(sex),
+  cp=as.factor(cp),
+  trestbps=as.integer(trestbps),
+  choi=as.integer(choi),
+  fbs=as.factor(fbs),
+  restecg=as.factor(restecg),
+  thalach=as.integer(thalach),
+  exang=as.factor(exang),
+  oldpeak=as.numeric(oldpeak),
+  slope=as.factor(slope),
+  ca=as.factor(ca),
+  thai=as.factor(thai),
+  num=as.factor(num)
+)
+
+sapply(data, class)
+```
+
+
+
+Convert $\tt ?$ to $\tt NA$.
+
+```{r Make NA rows}
+data[ data == "?"] <- NA
+colSums(is.na(data))
+
+summary(data)
+
+data$thai[which(is.na(data$thai))] <- as.factor("3.0")
+data <- data[!(data$ca %in% c(NA)),]
+colSums(is.na(data))
+
+summary(data)
+```
+
+
+
+Remove $\tt NA$ rows by coercing to factor.
+
+```{r Remove NA rows}
+data$ca <- factor(data$ca)
+data$thai <- factor(data$thai)
+summary(data)
+```
+
+
+
+$\tt Data Exploration $
+
+Plot proportion of disease present vs disease not present
+
+```{r disease vs not disease}
+data %>%
+  ggplot(aes(x = num)) + 
+  geom_histogram(stat = 'count', fill = "steelblue") +
+  theme_bw()
+```
+
+
+
+Determine number of disease vs not disease and portions
+
+```{r number of disease vs not disease and portions}
+data_nrows <- nrow(data)
+data_nrows
+
+data_present <- sum(as.numeric(data$num) == 2)
+data_present
+
+data_not_present <- data_nrows - data_present
+data_not_present
+
+data_present_percent <- data_present / data_nrows
+data_present_percent
+
+data_not_present_percent <- 1 - data_present_percent
+data_not_present_percent
+```
+
+The dimenion of the database is 299 X 14.  The number of patients with heart disease is 138, 46.15% of the database.  The number of patients without heart disease is 161, 53.85% of the database.
+
+
+Plot a few predictors.
+
+```{r Plot a few predictors}
+data %>%
+  gather(-sex, -cp, -fbs, -restecg, -exang, -slope, -ca, -thai, -num, key = "var", value = "value") %>%
+  ggplot(aes(x = value, y = ..count.. , colour = num)) +
+  scale_color_manual(values=c("#0080FF", "#FF0000"))+
+  geom_density() +
+  facet_wrap(~var, scales = "free",  nrow = 2) +
+  theme_bw()
+```
+
+Analysis shows that as patients approach age 55 the presence of heart disease starts to exceed no presence.  Cholesterol (chol) doesn't appear to have as much as an effect as advertised. The number of test subjects with heart disease is either lower or equal to test subjects without heart disease. 
+
+
+Create train set and test set by partitioning the data set. The train_set and test_set are used by the Random Forest algorithm. The dt_train_set and dt_test_set are used by the Decision Tree alogrithm.
+
+```{r Create partition}
+set.seed(123, sample.kind="Rounding")
+
+test_index <- createDataPartition(y = data$num, times = 1, p = 0.25, list = FALSE)
+train_set <- data[-test_index,]
+test_set <- data[test_index,]
+
+dt_train_set <- data[-test_index,]
+dt_test_set <- data[test_index,]
+```
+
+
+
+$\tt Decision Tree $
+First the Descision Tree algorithm is evaluated.
+
+Create a full Design Tree.
+
+```{r Create a full Design Tree}
+dt_full <- rpart(num ~ . , data = dt_train_set, method = "class", cp = 0)
+```
+
+The complexity table is used to control the size of the tree and find the optimal tree size.  Creating a full tree with a cp setting of zero means there are no restrictions and ends up creating a complex tree.
+
+Print the complexity parameter (cp) table to help select the decision tree that minimizes misclassification error.
+
+```{r Print the cp}
+printcp(dt_full)
+```
+
+
+
+Plot the cp.
+
+```{r Plot the cp}
+plotcp(dt_full, lty = 3, col = 2, upper = "splits")
+```
+
+
+
+
+Find the best cp based on the lowest xerror.
+
+```{r Find the best cp}
+bestcp <- dt_full$cptable[which.min(dt_full$cptable[,"xerror"]),"CP"]
+bestcp
+```
+
+
+
+Prune the bestcp.
+
+```{r Prune the best cp}
+dt_pruned <- prune(dt_full, cp = bestcp)
+summary(dt_pruned)
+```
+
+
+
+Predict based on the pruned decision tree.
+
+```{r Predict based on the pruned decision tree}
+dt_predict <- predict(dt_pruned, dt_test_set, type = "class")
+```
+
+
+
+Calculate confusion matrix and plot it.
+
+```{r Calculate confusion matrix and plot it}
+# Calculate confusion matrix and plot it
+table <- data.frame(confusionMatrix(dt_predict, test_set$num)$table)
+
+plotTable <- table %>%
+  mutate(goodbad = ifelse(table$Prediction == table$Reference, "good", "bad")) %>%
+  group_by(Reference) %>%
+  mutate(prop = Freq/sum(Freq))
+
+ggplot(data = plotTable, mapping = aes(x = Reference, y = Prediction, fill = goodbad, alpha = prop)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), vjust = .5, fontface  = "bold", alpha = 1) +
+  scale_fill_manual(values = c(good = "green", bad = "red")) +
+  theme_bw() +
+  xlim(rev(levels(table$Reference)))
+```
+
+
+
+Calculate the classification error, subtract from 1 to get accuracy.
+
+```{r Calculate the classification error}
+dt_accuracy <- 1 - round((table$Freq[2] + table$Freq[3]) / (table$Freq[1] + table$Freq[2] + table$Freq[3] + table$Freq[4]),3)
+dt_accuracy
+```
+
+
+
+
+$\tt Random Forest Algorithm $
+Now let's see how the Random Forest algorithm performs.
+
+
+
+K-fold cross validation is handled by the the trControl function. 
+cv is the tyoe of method used for resampling the dataset.  number is the number of folders.  The type of search is a grid of variables to try.
+
+```{r Set train control for tuning parameters}
+set.seed(123, sample.kind="Rounding")
+
+trControl <- trainControl(method = "cv",
+                          number = 10,
+                          search = "grid")
+```
+
+
+
+Train the default Random Forest model.
+
+```{r Create training control and train default}
+rf_default <- train(num ~ .,
+                    data = train_set,
+                    method = "rf",
+                    metric = "Accuracy",
+                    trControl = trControl)
+
+rf_default
+```
+
+
+
+Make prediction for the Random Forest with default parameters.
+
+```{r Make predicton on the test set}
+pred_default <-predict(rf_default, test_set)
+```
+
+
+
+Calculate the Confusion Matrix and plot it.
+
+```{r Calculate confusion matrix and plot it fr default model}
+table <- data.frame(confusionMatrix(pred_default, test_set$num)$table)
+
+plotTable <- table %>%
+  mutate(goodbad = ifelse(table$Prediction == table$Reference, "good", "bad")) %>%
+  group_by(Reference) %>%
+  mutate(prop = Freq/sum(Freq))
+
+ggplot(data = plotTable, mapping = aes(x = Reference, y = Prediction, fill = goodbad, alpha = prop)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), vjust = .5, fontface  = "bold", alpha = 1) +
+  scale_fill_manual(values = c(good = "green", bad = "red")) +
+  theme_bw() +
+  xlim(rev(levels(table$Reference)))
+```
+
+
+
+Calculate classification error to get accuracy.
+
+```{r Calculate classification error to get accuracy}
+rf_accuracy <- 1 - round((table$Freq[2] + table$Freq[3]) / (table$Freq[1] + table$Freq[2] + table$Freq[3] + table$Freq[4]),3)
+rf_accuracy
+```
+
+
+
+Calculate the variable importance and plot it.
+
+```{r Calculate the variable importance for default model}
+varImp(rf_default)
+
+ggplot2::ggplot(varImp(rf_default))
+```
+
+
+
+Find the best mtry.
+
+```{r Find best mtry}
+tuneMtry <- expand.grid(.mtry = c(1: 10))
+rf_mtry <- train(num ~ .,
+                 data = train_set,
+                 method = "rf",
+                 metric = "Accuracy",
+                 tuneGrid = tuneMtry,
+                 trControl = trControl,
+                 importance = TRUE,
+                 nodesize = 14,
+                 ntree = 300)
+
+rf_mtry
+
+best_mtry <- rf_mtry$bestTune$mtry
+best_mtry
+```
+
+
+
+Find best maxnodes.
+
+```{r Find best maxnodes}
+maxNodeList <- list()
+tuneMtry <- expand.grid(.mtry = best_mtry)
+
+for (mn in c(5: 15)) {
+  set.seed(123, sample.kind="Rounding")
+  rf_maxnode <- train(num ~ .,
+                      data = train_set,
+                      method = "rf",
+                      metric = "Accuracy",
+                      tuneGrid = tuneMtry,
+                      trControl = trControl,
+                      importance = TRUE,
+                      nodesize = 14,
+                      maxnodes = mn,
+                      ntree = 300)
+  current_iteration <- toString(mn)
+  maxNodeList[[current_iteration]] <- rf_maxnode
+}
+results_maxnodes <- resamples(maxNodeList)
+summary(results_maxnodes)
+```
+
+
+
+Plot best maxnodes.
+
+```{r Plot best maxnodes}
+boxplot(results_maxnodes$values[1:10,2:23], col = "red")
+```
+
+
+
+Find the best maxtrees.
+
+```{r Find best maxtrees}
+maxTreeList <- list()
+tuneMtry <- expand.grid(.mtry = best_mtry)
+
+for (nt in c(250, 300, 350, 400, 450, 500, 550, 600, 800, 1000, 2000)) {
+  set.seed(123)
+  rf_maxtrees <- train(num ~ .,
+                       data = train_set,
+                       method = "rf",
+                       metric = "Accuracy",
+                       tuneGrid = tuneMtry,
+                       trControl = trControl,
+                       importance = TRUE,
+                       nodesize = 14,
+                       maxnodes = 10,
+                       ntree = nt)
+  key <- toString(nt)
+  maxTreeList[[key]] <- rf_maxtrees
+}
+results_tree <- resamples(maxTreeList)
+summary(results_tree)
+```
+
+
+
+Plot best maxtrees.
+
+```{r Plot best maxtrees}
+boxplot(results_tree$values[1:10,2:23], col = "green")
+```
+
+
+
+Now that we have the optimized tuning parameters, generate final fit.
+
+```{r Generate final fit.}
+set.seed(123)
+
+tuneMtry <- expand.grid(.mtry = best_mtry)
+
+rf_fit <-train(
+              num ~ ., 
+              data = train_set,
+              method = "rf",
+              metric = "Accuracy",
+              trControl = trControl,
+              tuneGrid = tuneMtry,
+              importance = TRUE,
+              nodesize = 14,
+              maxnodes = 10,
+              ntree = 800)
+
+rf_fit
+```
+
+
+
+Make a prediction with the final fit.
+
+```{r Make a prediction on optimized fit}
+prediction <-predict(rf_fit, test_set)
+```
+
+
+
+Plot Confusion Matrix. 
+
+```{r Plot Confusion Matrix}
+
+table <- data.frame(confusionMatrix(prediction, test_set$num)$table)
+
+plotTable <- table %>%
+  mutate(goodbad = ifelse(table$Prediction == table$Reference, "good", "bad")) %>%
+  group_by(Reference) %>%
+  mutate(prop = Freq/sum(Freq))
+
+ggplot(data = plotTable, mapping = aes(x = Reference, y = Prediction, fill = goodbad, alpha = prop)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), vjust = .5, fontface  = "bold", alpha = 1) +
+  scale_fill_manual(values = c(good = "green", bad = "red")) +
+  theme_bw() +
+  xlim(rev(levels(table$Reference)))
+```
+
+
+
+Calculate the classification error, subtract from 1 to get accuracy.  Sum up the false positives and false negatives and divide by the totalof the confusion matrix.
+
+```{r Calculate classification error and subtract from 1}
+rf_accuracy <- 1 - round((table$Freq[2] + table$Freq[3]) / (table$Freq[1] + table$Freq[2] + table$Freq[3] + table$Freq[4]),3)
+rf_accuracy
+```
+
+
+Determine variable importance and plot.
+
+```{r Determine variable importance and plot}
+varImp(rf_fit)
+
+ggplot2::ggplot(varImp(rf_fit))
+```
+
+
+
+## Results {-}
+
+The Random Forest algorithm produced better results than the Design Tree algorithm.
+
+$\tt Acurracy$:
+Data Tree model with default parameters              $\tt 0.763$;
+Random Forest model with default parameters          $\tt 0.816$;
+Random Forest model with optimized tuning parameters $\tt 0.829$.
+
+The complexity paramter (cp) table showed that the best cp to prune was the second one, with a cp of 0.048544 and the lowest xerror of 0.56311.  Actually a third cp had the same xerror value but 2 was chosen first.
+
+Three tuning paramters were used to generate an optimized fit for Random Forest: mtry, maxnodes and maxtrees.  The optmized tuning parameters were:
+  a) $\tt mtry of 1$;
+  b) $\tt maxnodes of 11$; 
+  c) $\tt maxtrees of 350$.
+  
+The tuning parameter mtry is the number of randomly chosen variables at each split in the tree.  The tuning parameter maxnodes is the number of terminal nodes.  The tuning parameter maxtree is the number of trees to build.
+
+The mtry tuning variable of 1 was chosen out the range 1 to 10.  
+The default variable is normally \begin{equation} \sqrt{ number-of-variables } \end{equation}
+Lower mtry values tend to lead to less correlated trees which increases stability. Moderate values have more of an effect when mtry values are low.  However, lower mtry values can perform worse since less optimal values are used.  Higher values were attempted but the accuracy was always worse.
+
+The optimal maxtrees found was 350, a little lower than expected.   The maxtrees don't appear as tunable but from the literature it is recommended they are high.  Values from 500 to 2000 were attempted as well as low as 50 and didn't appear to have very much effect.  Intuitively one would think that a higher number of trees would lead to more stability and lead to better results.
+
+The optimal maxnodes found was 11.  This is the maximum number of terminal nodes.  Changes to this parameter did not seem to have much effect.
+
+The nodesize that was used was 14, the number of variables.  The typical default is 1 for classification but performance improved with 14.
+
+The variable importance shows the importance of variables in the prediction rule.  The 4 most important variables for the Random Forest default approach are thaalach thai7.0 (100%), oldpeak (86%), thai7.0 (77%), and cp4 (77%).  The least important variables for the Random Forest default approach are restecgi (0%), thai6.0 (5%), slope (5%), and fbsi (9%).
+
+The variable importance changed from the the Random Forest default approach to the optimized approach. The 4 most important variables for the Random Forest default approach are thai7.0 (100%), cp4 (98%), oldpeak (82%), and thaalach (80%).  The least important variables for the Random Forest default approach are restecgi (0%), fbsi (5%), chol (7%), and slope3 (20%).
+
+The higher number of trees the more stable the variable importance.  Increasing mtry will increase the magnitude of variable of importance and affects splitting.
+
+The database was partitioned into 75% training and 25% test.  A few other partitions were tried: 0.2, 0.3, 0.4.  The 0.25 partition index produced the most accurate results out of the partitions attempted.
+
+
+
+## Conclusion {-}
+
+Decision Tree is a weak learner and suffers from overfitting.  Overfitting means that it can get overtrained with the training set and when finally evaluated with the test set, it doesn't perform very well.
+
+The Random Forest uses many decision trees (hundreds or thousands) to create an ensemble of trees and doesn't overfit too often. This leads to a generalization of a goup of weak learning decision trees to create a stronger learning algorithm.  This has been shown by the accuracy results above.
+
+The train function was used for training Random Forests.  The randomForest function based on Breiman's algorithm produces better results and would be interesting future work.
+
+Ensemble learning algorithms like Gradient Boosting Model (GBM) and Extreme Gradient Boosting (XGB) model would also be good candidates for future evaluation.  GBM caused R Studio to crash and would like to look into why it was occurring.  XGB produced good results and more time is needed analyze it further.
